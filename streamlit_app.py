@@ -11,14 +11,18 @@ import os
 
 ## --- 환경 설정 및 모델 초기화 ---
 
+# ⚠️ 보안을 위해 하드 코딩된 API 키는 제거하고, st.secrets에서 키를 불러옵니다.
 try:
-    # st.secrets는 로컬에서 secrets.toml을, 클라우드에서 Secrets 메뉴를 읽습니다.
-    # 클라우드 배포 시에는 secrets.toml이 아닌 클라우드 Secrets 메뉴에 키를 넣어주어야 합니다.
-    api_key = "AIzaSyArJXZqPKIkc_wom1C5dQc_KRRDVw5y1IE" 
-    # genai.configure(api_key=api_key) # API 키 설정은 이 코드를 사용합니다.
-    # ...
+    # 1. API 키를 st.secrets에서 불러옵니다.
+    #    (로컬 secrets.toml 또는 Streamlit Cloud Secrets)
+    api_key = st.secrets["GEMINI_API_KEY"] 
+    
+    # 2. genai 클라이언트를 API 키로 실제로 초기화합니다. (주석 해제)
+    genai.configure(api_key=api_key) 
+    
 except KeyError:
-    st.error("API 키 설정 오류: 'GEMINI_API_KEY'를 secrets.toml 또는 Streamlit Secrets에 설정해주세요.")
+    # 키가 설정되지 않았을 경우 오류 메시지를 표시하고 앱 실행을 중지합니다.
+    st.error("API 키 설정 오류: 'GEMINI_API_KEY'를 Streamlit Secrets 또는 secrets.toml에 설정해주세요.")
     st.stop()
 
 # 안전 설정
