@@ -1,48 +1,27 @@
-# !pip install google-genai  # Jupyter/Colab에서 실행 시 이 줄의 주석을 해제합니다.
+# 필요한 라이브러리 설치:
+# 터미널: pip install google-genai streamlit
+# Streamlit 앱 배포 시, requirements.txt에 'google-genai'와 'streamlit'을 포함해야 합니다.
+
+import streamlit as st # Streamlit 라이브러리 추가
 import google.generativeai as genai
 import random
 import time
-import os # 환경 변수를 사용하기 위해 os 모듈을 불러옵니다.
+import os 
+# import os는 Streamlit Secret을 사용해도 안전성을 위해 남겨둡니다.
 
-# API-KEY 설정
-# ⚠️ 보안을 위해 API 키를 직접 코드로 작성하는 대신 환경 변수 'GEMINI_API_KEY'를 사용합니다.
+## --- 환경 설정 및 모델 초기화 ---
+
+# API-KEY 설정: Streamlit Secrets에서 API 키를 불러옵니다.
+# ⚠️ Streamlit Cloud에서 'GEMINI_API_KEY' secret이 설정되어 있어야 합니다.
 try:
-    # os.environ에서 'GEMINI_API_KEY' 환경 변수를 불러와 모델을 구성합니다.
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"]) 
-except KeyError:
-    print("경고: 환경 변수 'GEMINI_API_KEY'가 설정되지 않았습니다. API 키를 설정해주세요.")
-    # 실제 API 키가 설정되지 않으면 이후 genai.GenerativeModel 호출에서 오류가 발생할 수 있습니다.
-
-# # 기존 코드 (API 키 노출 문제로 비활성화 권장)
-# # GOOGLE_API_KEY = "AIzaSyArJXZqPKIkc_wom1C5dQc_KRRDVw5y1IE" 
-# # genai.configure(api_key=GOOGLE_API_KEY)  
-
-# 이순신 장군 페르소나
-lee_sun_shin_persona = """
-당신은 조선 시대의 명장 이순신 장군입니다. 임진왜란 때 활약한 해군 제독으로, 국가와 백성을 지키는 데 헌신했습니다. 조선시대의 격식 있는 말투로 대화하며, 다음 특성을 가집니다:
-
-1. 애국심: 조선과 백성에 대한 깊은 사랑과 충성심을 표현합니다.
-2. 용기: 어려운 상황에서도 굴하지 않는 용기를 보입니다.
-3. 전략가: 뛰어난 전술과 전략적 사고를 바탕으로 대화합니다.
-4. 정의감: 올바른 도리를 중요시하고 정의를 추구합니다.
-5. 존엄성: 고귀한 품격과 위엄을 유지합니다.
-
-국가의 안위와 백성의 평화를 최우선으로 여기며, 외적의 침략에 대해서는 단호한 태도를 보이되 과도한 적대감은 표현하지 않습니다.
-"""
-
-# 도요토미 히데요시 페르소나
-toyotomi_hideyoshi_persona = """
-당신은 일본의 전국시대를 통일한 도요토미 히데요시입니다. 임진왜란을 일으킨 장본인이자 뛰어난 전략가로, ~데쓰, ~데쓰까, 빠가야로, 고노야고, 오스와리 등 한국인들에게 익숙한 일본어 단어가 있는 한국어로 대화하며 다음 특성을 가집니다:
-
-1. 야망: 대륙 정복에 대한 강한 열망을 가지고 있습니다.
-2. 전략가: 정치와 전쟁에서 뛰어난 전략적 사고를 보여줍니다.
-3. 카리스마: 부하들을 이끄는 강한 리더십을 가지고 있습니다.
-4. 교활함: 상황에 따라 유연하게 대처하는 능력이 있습니다.
-5. 자신감: 자신의 능력과 판단에 대한 강한 확신을 가지고 있습니다.
-
-일본의 이익과 확장을 최우선으로 여기며, 타국과의 관계에서는 실리적인 태도를 보입니다.
-대화에 갑자기 끼어들어 자신의 의견을 도발적인 발언을 합니다.
-"""
+    # st.secrets 대신 os.environ을 사용하여 환경 변수를 불러옵니다.
+    # (Streamlit Cloud에서 Secrets는 일반적으로 환경 변수로 자동 설정됩니다.)
+    # 로컬 환경에서 테스트 시 'st.secrets' 대신 'os.environ'을 사용할 수 있습니다.
+    api_key = os.environ.get("GEMINI_API_KEY") or st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+except (KeyError, Exception) as e:
+    st.error("API 키 설정 오류: 'GEMINI_API_KEY'를 Streamlit Secrets 또는 환경 변수에 설정해주세요.")
+    st.stop() # 키가 없으면 앱 실행을 중지합니다.
 
 # 안전 설정
 safety_settings = [
@@ -64,12 +43,37 @@ safety_settings = [
     }
 ]
 
-# 모델 정의
-model_name = "gemini-2.5-flash-lite"
-model = genai.GenerativeModel(model_name, safety_settings=safety_settings)
-chat_bot = model.start_chat(history=[])
+# 모델 정의 (Streamlit의 캐싱 기능을 활용하여 초기화 속도를 높입니다.)
+@st.cache_resource
+def get_model():
+    model_name = "gemini-2.5-flash-lite"
+    model = genai.GenerativeModel(model_name, safety_settings=safety_settings)
+    # history는 세션별로 관리해야 하므로, chat_bot은 아래 메인 로직에서 생성합니다.
+    return model
 
-def generate_response(persona, character_name, user_input):
+model = get_model()
+
+# 세션 상태 초기화 (대화 기록 및 챗봇 인스턴스)
+if "chat_bot" not in st.session_state:
+    st.session_state.chat_bot = model.start_chat(history=[])
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+## --- 페르소나 정의 (유지) ---
+
+lee_sun_shin_persona = """
+당신은 조선 시대의 명장 이순신 장군입니다. 임진왜란 때 활약한 해군 제독으로, 국가와 백성을 지키는 데 헌신했습니다. 조선시대의 격식 있는 말투로 대화하며, 다음 특성을 가집니다:
+... (중략) ...
+"""
+
+toyotomi_hideyoshi_persona = """
+당신은 일본의 전국시대를 통일한 도요토미 히데요시입니다. 임진왜란을 일으킨 장본인이자 뛰어난 전략가로, ~데쓰, ~데쓰까, 빠가야로, 고노야고, 오스와리 등 한국인들에게 익숙한 일본어 단어가 있는 한국어로 대화하며 다음 특성을 가집니다:
+... (중략) ...
+"""
+
+## --- 응답 생성 함수 (Streamlit 환경에 맞게 수정) ---
+
+def generate_response(persona, character_name, user_input, chat_instance=None):
     try:
         prompt = f"""
         {persona}
@@ -79,65 +83,96 @@ def generate_response(persona, character_name, user_input):
 
         {character_name}으로서 응답해주세요:
         """
-
-        # stream=False로 변경하고 응답 처리 방식 수정
-        response = chat_bot.send_message(prompt, stream=False)
-        print(f"{character_name}: ", end="", flush=True)
-
-        if response.text:
-            print(response.text)
-            return response.text
-        return None
+        # chat_instance를 사용하거나, 새 메시지를 전송합니다.
+        response = chat_instance.send_message(prompt, stream=False)
+        return response.text
 
     except Exception as e:
-        print(f"오류 발생: {str(e)}")
+        st.error(f"{character_name} 응답 오류 발생: {str(e)}")
         return None
 
-def generate_response_with_retry(persona, character_name, user_input, max_retries=3):
+def generate_response_with_retry(persona, character_name, user_input, max_retries=3, chat_instance=None):
     for attempt in range(max_retries):
         try:
-            response = generate_response(persona, character_name, user_input)
+            response = generate_response(persona, character_name, user_input, chat_instance)
             if response is not None:
                 return response
         except Exception as e:
-            print(f"오류 발생: {str(e)}")
-            if "429" in str(e):  # API 할당량 초과 에러
-                wait_time = (attempt + 1) * 5  # 점진적으로 대기 시간 증가
-                print(f"{wait_time}초 후 재시도합니다... ({attempt + 1}/{max_retries})")
-                time.sleep(wait_time)
-            else:
-                if attempt < max_retries - 1:
-                    print(f"재시도 중... ({attempt + 1}/{max_retries})")
-                    time.sleep(2)
+            time.sleep(2) # 재시도 전 잠깐 대기
+            if attempt == max_retries - 1:
+                st.error(f"{character_name} 응답 생성 최종 실패.")
+                return None
     return None
 
-print("이순신 장군과의 대화를 시작합니다. 가끔 도요토미 히데요시가 끼어들 수 있습니다.")
-print("'대화 종료'라고 입력하면 대화가 종료됩니다.")
+## --- Streamlit UI 및 메인 루프 ---
 
-while True:
-    user_input = input("나: ")
+st.title("이순신 vs 도요토미 히데요시 ⚔️")
+st.markdown("이순신 장군과의 대화를 시작합니다. 가끔 도요토미 히데요시가 끼어들 수 있습니다.")
 
-    if user_input.lower() == "대화 종료":
-        print("이순신: 대화를 종료합니다. 안녕히 가십시오.")
-        break
+# 기존 메시지 표시
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    lee_response = generate_response_with_retry(lee_sun_shin_persona, "이순신", user_input)
-    if lee_response is None:
-        print("이순신 장군의 응답을 생성하는데 실패했습니다.")
-        continue
+# 사용자 입력 받기
+if user_input := st.chat_input("나:"):
+    
+    # 1. 사용자 메시지 기록 및 표시
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-    if random.random() < 0.49:
-        print("\n도요토미 히데요시가 끼어듭니다:")
-        hideyoshi_response = generate_response_with_retry(
-            toyotomi_hideyoshi_persona,
-            "히데요시",
-            f"이순신의 말: {lee_response}\n사용자의 말: {user_input}"
+    # 2. 이순신 장군 응답 생성
+    with st.spinner("이순신 장군이 생각 중입니다..."):
+        lee_response = generate_response_with_retry(
+            lee_sun_shin_persona, 
+            "이순신", 
+            user_input, 
+            chat_instance=st.session_state.chat_bot
         )
+    
+    if lee_response:
+        # 이순신 응답 기록 및 표시
+        st.session_state.messages.append({"role": "이순신", "content": lee_response})
+        with st.chat_message("이순신"):
+            st.markdown(lee_response)
 
-        if hideyoshi_response:
-            print("\n이순신 장군이 대응합니다:")
-            generate_response_with_retry(
-                lee_sun_shin_persona,
-                "이순신",
-                f"히데요시가 말하길: {hideyoshi_response}"
-            )
+        # 3. 도요토미 히데요시 난입 (49% 확률)
+        if random.random() < 0.49:
+            st.session_state.messages.append({"role": "system", "content": "도요토미 히데요시가 끼어듭니다:"})
+            st.info("도요토미 히데요시가 끼어듭니다:")
+
+            # 히데요시 응답 생성
+            hideyoshi_prompt = f"이순신의 말: {lee_response}\n사용자의 말: {user_input}"
+            with st.spinner("히데요시가 도발할 기회를 엿보고 있습니다..."):
+                hideyoshi_response = generate_response_with_retry(
+                    toyotomi_hideyoshi_persona,
+                    "히데요시",
+                    hideyoshi_prompt,
+                    chat_instance=st.session_state.chat_bot # 같은 챗봇 인스턴스 사용
+                )
+            
+            if hideyoshi_response:
+                # 히데요시 응답 기록 및 표시
+                st.session_state.messages.append({"role": "히데요시", "content": hideyoshi_response})
+                with st.chat_message("히데요시"):
+                    st.markdown(hideyoshi_response)
+
+                st.session_state.messages.append({"role": "system", "content": "이순신 장군이 대응합니다:"})
+                st.info("이순신 장군이 대응합니다:")
+
+                # 이순신 대응 응답 생성
+                lee_counter_prompt = f"히데요시가 말하길: {hideyoshi_response}"
+                with st.spinner("이순신 장군이 엄중히 대응합니다..."):
+                    lee_counter_response = generate_response_with_retry(
+                        lee_sun_shin_persona,
+                        "이순신",
+                        lee_counter_prompt,
+                        chat_instance=st.session_state.chat_bot
+                    )
+
+                if lee_counter_response:
+                    # 이순신 대응 기록 및 표시
+                    st.session_state.messages.append({"role": "이순신", "content": lee_counter_response})
+                    with st.chat_message("이순신"):
+                        st.markdown(lee_counter_response)
